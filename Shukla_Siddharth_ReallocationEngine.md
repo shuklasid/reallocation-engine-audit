@@ -367,8 +367,3 @@ holding my own prior conclusion in mind and noticing where my new
 prediction was actually just a copy of the old one, rather than a fresh
 hypothesis about this specific domain.
 
-# Rep link
-https://github.com/shuklasid/reallocation-engine-audit.git
-
-# Video link
-https://northeastern-my.sharepoint.com/:v:/r/personal/shukla_sid_northeastern_edu/Documents/Recordings/Meeting%20with%20Siddharth%20Shukla-20260727_201942-Meeting%20Recording.mp4?csf=1&web=1&e=maK8J9&nav=eyJyZWZlcnJhbEluZm8iOnsicmVmZXJyYWxBcHAiOiJTdHJlYW1XZWJBcHAiLCJyZWZlcnJhbFZpZXciOiJTaGFyZURpYWxvZy1MaW5rIiwicmVmZXJyYWxBcHBQbGF0Zm9ybSI6IldlYiIsInJlZmVycmFsTW9kZSI6InZpZXcifX0%3D
