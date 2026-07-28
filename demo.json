@@ -1,0 +1,197 @@
+{
+  "status": "DRAFT \u2014 NOT APPROVED. Do not act on this allocation until a human has reviewed it, including checking SLA-tier urgency for queued jobs, and re-run with --human-approved.",
+  "objective_stated": "Maximize expected passing-unit throughput per test-station-hour spent, using historical pass rate as a proxy for station reliability.",
+  "objective_leaves_out": "SLA-tier urgency, test-program-specific yield differences, calibration schedules, and whether historical pass rate reflects current hardware state.",
+  "data_note": "SYNTHETIC dataset \u2014 see tool docstring for what it does/doesn't capture.",
+  "gate": {
+    "rows_in": 3823,
+    "rows_passed": 3798,
+    "rows_rejected": 25,
+    "rejection_reasons_sample": [
+      {
+        "station_instance_id": "LegacyMixedSignalTester_GenA_000",
+        "reason": "missing required field: sla_tier"
+      },
+      {
+        "station_instance_id": "LegacyMixedSignalTester_GenA_001",
+        "reason": "missing required field: station_type"
+      },
+      {
+        "station_instance_id": "LegacyMixedSignalTester_GenA_002",
+        "reason": "negative unit counts (data corruption)"
+      },
+      {
+        "station_instance_id": "LegacyMixedSignalTester_GenA_003",
+        "reason": "zero total units tested on record \u2014 no signal"
+      },
+      {
+        "station_instance_id": "LegacyMixedSignalTester_GenA_004",
+        "reason": "non-numeric units_passed/units_failed"
+      },
+      {
+        "station_instance_id": "LegacyMixedSignalTester_GenA_005",
+        "reason": "missing required field: sla_tier"
+      },
+      {
+        "station_instance_id": "LegacyMixedSignalTester_GenA_006",
+        "reason": "missing required field: sla_tier"
+      },
+      {
+        "station_instance_id": "LegacyMixedSignalTester_GenA_007",
+        "reason": "missing required field: sla_tier"
+      },
+      {
+        "station_instance_id": "LegacyMixedSignalTester_GenA_008",
+        "reason": "missing required field: sla_tier"
+      },
+      {
+        "station_instance_id": "LegacyMixedSignalTester_GenA_009",
+        "reason": "missing required field: sla_tier"
+      }
+    ]
+  },
+  "station_types_eligible": 15,
+  "total_hours_reallocated": 200.0,
+  "allocation": [
+    {
+      "station_type": "BurnInSystem_GenA",
+      "n_records": 352,
+      "total_units": 3808.0,
+      "pass_rate_point": 0.9756,
+      "pass_rate_ci95": [
+        0.9702,
+        0.98
+      ],
+      "uncertainty_width": 0.0098,
+      "priority_score": 0.9708,
+      "mean_station_age_years": 6.5,
+      "allocated_hours": 21.07
+    },
+    {
+      "station_type": "LegacyMixedSignalTester_GenB",
+      "n_records": 369,
+      "total_units": 6479.0,
+      "pass_rate_point": 0.9498,
+      "pass_rate_ci95": [
+        0.9443,
+        0.9549
+      ],
+      "uncertainty_width": 0.0106,
+      "priority_score": 0.9448,
+      "mean_station_age_years": 6.34,
+      "allocated_hours": 20.5
+    },
+    {
+      "station_type": "LegacyMixedSignalTester_GenA",
+      "n_records": 357,
+      "total_units": 7718.0,
+      "pass_rate_point": 0.9423,
+      "pass_rate_ci95": [
+        0.9369,
+        0.9473
+      ],
+      "uncertainty_width": 0.0104,
+      "priority_score": 0.9374,
+      "mean_station_age_years": 6.48,
+      "allocated_hours": 20.34
+    },
+    {
+      "station_type": "PowerDeviceTester_GenA",
+      "n_records": 79,
+      "total_units": 985.0,
+      "pass_rate_point": 0.9482,
+      "pass_rate_ci95": [
+        0.9326,
+        0.9604
+      ],
+      "uncertainty_width": 0.0278,
+      "priority_score": 0.935,
+      "mean_station_age_years": 5.91,
+      "allocated_hours": 20.29
+    },
+    {
+      "station_type": "AnalogMixedTester_GenA",
+      "n_records": 266,
+      "total_units": 3214.0,
+      "pass_rate_point": 0.9263,
+      "pass_rate_ci95": [
+        0.9167,
+        0.9348
+      ],
+      "uncertainty_width": 0.0181,
+      "priority_score": 0.9179,
+      "mean_station_age_years": 5.98,
+      "allocated_hours": 19.92
+    },
+    {
+      "station_type": "PowerDeviceTester_GenB",
+      "n_records": 353,
+      "total_units": 5085.0,
+      "pass_rate_point": 0.9207,
+      "pass_rate_ci95": [
+        0.913,
+        0.9279
+      ],
+      "uncertainty_width": 0.0149,
+      "priority_score": 0.9139,
+      "mean_station_age_years": 6.24,
+      "allocated_hours": 19.83
+    },
+    {
+      "station_type": "HighSpeedDigitalTester_GenB",
+      "n_records": 363,
+      "total_units": 10393.0,
+      "pass_rate_point": 0.9117,
+      "pass_rate_ci95": [
+        0.9061,
+        0.917
+      ],
+      "uncertainty_width": 0.0109,
+      "priority_score": 0.9067,
+      "mean_station_age_years": 6.25,
+      "allocated_hours": 19.68
+    },
+    {
+      "station_type": "MemoryTester_GenA",
+      "n_records": 155,
+      "total_units": 4072.0,
+      "pass_rate_point": 0.9084,
+      "pass_rate_ci95": [
+        0.8991,
+        0.9169
+      ],
+      "uncertainty_width": 0.0177,
+      "priority_score": 0.9003,
+      "mean_station_age_years": 6.51,
+      "allocated_hours": 19.54
+    },
+    {
+      "station_type": "HighSpeedDigitalTester_GenA",
+      "n_records": 192,
+      "total_units": 6388.0,
+      "pass_rate_point": 0.9022,
+      "pass_rate_ci95": [
+        0.8946,
+        0.9092
+      ],
+      "uncertainty_width": 0.0146,
+      "priority_score": 0.8956,
+      "mean_station_age_years": 6.2,
+      "allocated_hours": 19.44
+    },
+    {
+      "station_type": "MemoryTester_GenB",
+      "n_records": 163,
+      "total_units": 4034.0,
+      "pass_rate_point": 0.9013,
+      "pass_rate_ci95": [
+        0.8918,
+        0.9102
+      ],
+      "uncertainty_width": 0.0184,
+      "priority_score": 0.893,
+      "mean_station_age_years": 6.22,
+      "allocated_hours": 19.38
+    }
+  ]
+}
