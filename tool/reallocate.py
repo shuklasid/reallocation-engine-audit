@@ -1,36 +1,34 @@
 #!/usr/bin/env python3
 """
-Attention Reallocation Engine — job-search hour allocation.
+Test-Capacity Reallocation Engine.
 
-Domain: an international MS student on STEM OPT has a fixed, scarce resource
-and must reallocate it across candidate employers. Per Ch.2 ("The
-Reallocation Principle") of The Reallocation Engine, effort should go where
-the expected return is, not where the feedback feels good — that book
-argues a 3-3-2 day (2hrs targeted applying / 3hrs networking / 3hrs
-portfolio), with the "freed-hour rule" governing what happens when a role
-is skipped. This tool operates WITHIN the targeted-applying sub-budget: it
-does not decide the 3-3-2 split itself, it decides which companies that
-applying time should go to, using historical H-1B approval rate as an
-expected-return signal. This tool ingests SEC Form D x DOL H-1B mapped
-company data, gates it for quality (per Ch.3's "Verified-Data Contract" —
-verification comes from a script reading a public record, never from model
-inference), scores candidates, and reallocates a fixed hour-budget
-proportional to a priority score WITH an explicit uncertainty band on that
-score.
+Domain: a semiconductor back-end test floor has a fixed, scarce resource —
+available test-station-hours — and must reallocate queued test jobs across
+station types. This tool ingests a SYNTHETIC dataset modeling generic ATE
+(automated test equipment) station archetypes, gates it for quality, scores
+station types by historical pass rate with an explicit uncertainty band,
+and reallocates a fixed hour-budget proportional to that score.
 
-STATED OBJECTIVE (one sentence): within a candidate's targeted-applying
-hours, maximize expected interview-hours obtained per hour spent, using
-each company's historical H-1B approval rate as a proxy for "will sponsor
-me if I get an offer."
+DATA NOTE: this dataset is entirely synthetic, generated to model realistic
+structure (uneven record volume across station types, pass-rate noise,
+varied test-program mix) — it contains no real company, product, or
+customer data. What it captures: the *statistical shape* of an uneven,
+real-world-plausible test-floor dataset (some station types logged 30
+completions, others 400+; pass rates cluster realistically by station
+category). What it does NOT capture: real yield economics, real SLA
+penalty costs, real test-program dependencies, or any actual employer's
+production data.
 
-WHAT THIS OBJECTIVE LEAVES OUT: it says nothing about how many people are
-competing for a given role, how hard that company's process actually is,
-whether the company is even hiring for backend/infra roles right now, or
-whether past approval rate predicts future sponsorship at all for a company
-that has since changed policy, been acquired, or stopped filing. It also
-treats "hours spent" as a free variable, when in reality some applications
-take 20 minutes and others take a full day (referral hunting, take-home
-tests). This is a REALLOCATION ON A PROXY, not a reallocation on hiring odds.
+STATED OBJECTIVE (one sentence): maximize expected passing-unit throughput
+per test-station-hour spent, using each station type's historical pass
+rate as a proxy for "will this station reliably pass units if given more
+time."
+
+WHAT THIS OBJECTIVE LEAVES OUT: it says nothing about SLA tier urgency
+(a Critical-tier job may need to jump the queue regardless of station
+pass-rate), test-program-specific yield differences, station calibration
+schedules, or whether a station's historical pass rate reflects its
+current hardware state versus a stale, superseded configuration.
 """
 from __future__ import annotations
 import argparse
@@ -38,6 +36,7 @@ import csv
 import json
 import math
 from pathlib import Path
+from collections import defaultdict
 
 
 # ---------------------------------------------------------------------------
@@ -49,56 +48,42 @@ def load_rows(csv_path: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# 2. GIGO GATE — a checkable quality standard, applied BEFORE any scoring
+# 2. GIGO GATE
 # ---------------------------------------------------------------------------
-GATE_REQUIRED_FIELDS = ["company_name", "industry", "state"]
+GATE_REQUIRED_FIELDS = ["station_type", "sla_tier"]
 
 
 def passes_gate(row: dict) -> tuple[bool, str]:
-    """Returns (passes, reason_if_rejected)."""
     for field in GATE_REQUIRED_FIELDS:
         if not (row.get(field) or "").strip():
             return False, f"missing required field: {field}"
-
-    approvals = row.get("Total Approvals")
-    denials = row.get("Total Denials")
-    if not approvals and not denials:
-        return False, "no H-1B record at all (approvals and denials both null)"
-
     try:
-        a = float(approvals) if approvals else 0.0
-        d = float(denials) if denials else 0.0
+        passed = float(row.get("units_passed") or 0)
+        failed = float(row.get("units_failed") or 0)
     except ValueError:
-        return False, "non-numeric approvals/denials"
-
-    if a < 0 or d < 0:
-        return False, "negative approvals/denials (data corruption)"
-
-    if a == 0 and d == 0:
-        return False, "zero total H-1B decisions on record — no signal"
-
+        return False, "non-numeric units_passed/units_failed"
+    if passed < 0 or failed < 0:
+        return False, "negative unit counts (data corruption)"
+    if passed + failed == 0:
+        return False, "zero total units tested on record — no signal"
     return True, ""
 
 
 def run_gigo_gate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    passed, rejected = [], []
+    passed_rows, rejected = [], []
     for r in rows:
         ok, reason = passes_gate(r)
         if ok:
-            passed.append(r)
+            passed_rows.append(r)
         else:
-            rejected.append({"company_name": r.get("company_name", "?"), "reason": reason})
-    return passed, rejected
+            rejected.append({"station_instance_id": r.get("station_instance_id", "?"), "reason": reason})
+    return passed_rows, rejected
 
 
 # ---------------------------------------------------------------------------
-# 3. SCORING — Wilson score interval for approval-rate uncertainty
+# 3. AGGREGATE PER STATION TYPE + WILSON SCORE
 # ---------------------------------------------------------------------------
 def wilson_interval(successes: float, total: float, z: float = 1.96) -> tuple[float, float, float]:
-    """Returns (point_estimate, low, high) — 95% Wilson score interval.
-    Correctly widens the interval when total (n) is small, unlike a naive
-    approvals/(approvals+denials) ratio, which reports 100% confidence off
-    of e.g. a single approval and no denials."""
     if total == 0:
         return 0.0, 0.0, 0.0
     p = successes / total
@@ -108,28 +93,39 @@ def wilson_interval(successes: float, total: float, z: float = 1.96) -> tuple[fl
     return p, max(0.0, center - half), min(1.0, center + half)
 
 
-def score_company(row: dict) -> dict:
-    a = float(row.get("Total Approvals") or 0)
-    d = float(row.get("Total Denials") or 0)
-    total = a + d
-    p, lo, hi = wilson_interval(a, total)
-    uncertainty_width = hi - lo  # wide interval = low confidence in the point estimate
-    return {
-        "company_name": row["company_name"],
-        "industry": row.get("industry", ""),
-        "state": row.get("state", ""),
-        "n_decisions": total,
-        "approval_rate_point": round(p, 4),
-        "approval_rate_ci95": [round(lo, 4), round(hi, 4)],
-        "uncertainty_width": round(uncertainty_width, 4),
-        # priority score discounts by uncertainty: a 90% rate on n=2 is
-        # trusted less than a 70% rate on n=200
-        "priority_score": round(p * (1 - 0.5 * uncertainty_width), 4),
-    }
+def aggregate_by_station_type(rows: list[dict]) -> list[dict]:
+    agg = defaultdict(lambda: {"passed": 0.0, "failed": 0.0, "n_records": 0, "ages": []})
+    for r in rows:
+        st = r["station_type"]
+        agg[st]["passed"] += float(r.get("units_passed") or 0)
+        agg[st]["failed"] += float(r.get("units_failed") or 0)
+        agg[st]["n_records"] += 1
+        try:
+            agg[st]["ages"].append(float(r.get("station_age_years")))
+        except (TypeError, ValueError):
+            pass
+
+    out = []
+    for st, d in agg.items():
+        total = d["passed"] + d["failed"]
+        p, lo, hi = wilson_interval(d["passed"], total)
+        width = hi - lo
+        priority = p * (1 - 0.5 * width)
+        out.append({
+            "station_type": st,
+            "n_records": d["n_records"],
+            "total_units": total,
+            "pass_rate_point": round(p, 4),
+            "pass_rate_ci95": [round(lo, 4), round(hi, 4)],
+            "uncertainty_width": round(width, 4),
+            "priority_score": round(priority, 4),
+            "mean_station_age_years": round(sum(d["ages"]) / len(d["ages"]), 2) if d["ages"] else None,
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------
-# 4. REALLOCATION — allocate a fixed hour-budget proportional to priority
+# 4. REALLOCATION
 # ---------------------------------------------------------------------------
 def reallocate_hours(scored: list[dict], total_hours: float, top_n: int) -> list[dict]:
     top = sorted(scored, key=lambda r: r["priority_score"], reverse=True)[:top_n]
@@ -143,60 +139,51 @@ def reallocate_hours(scored: list[dict], total_hours: float, top_n: int) -> list
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", required=True)
-    ap.add_argument("--total-hours", type=float, default=40.0,
-                     help="total scarce resource (application-hours) to reallocate")
-    ap.add_argument("--top-n", type=int, default=15,
-                     help="how many companies receive an allocation")
-    ap.add_argument("--min-decisions", type=float, default=2.0,
-                     help="floor on n_decisions to even be eligible (avoid n=1 flukes)")
+    ap.add_argument("--total-hours", type=float, default=200.0,
+                     help="total scarce resource (test-station-hours) to reallocate")
+    ap.add_argument("--top-n", type=int, default=10)
+    ap.add_argument("--min-records", type=int, default=2)
     ap.add_argument("--out", required=True)
     ap.add_argument("--human-approved", action="store_true",
-                     help="HARD STOP: without this flag, output is marked DRAFT and unusable. "
-                          "This tool never contacts a company, submits an application, or takes "
-                          "any action on the candidate's behalf — it only ever produces a "
-                          "recommendation. A human must explicitly pass this flag after reviewing "
-                          "the allocation (including checking each company's actual open roles, "
-                          "per the explainability report's Amgen finding) before treating this "
-                          "output as an actual plan.")
+                     help="HARD STOP: without this flag, output is DRAFT and unusable. "
+                          "This tool never reconfigures a station or reroutes a real job — "
+                          "it only produces a recommendation. A human must review (including "
+                          "checking SLA-tier urgency, which this tool ignores) before treating "
+                          "this as an actual capacity plan.")
     args = ap.parse_args()
 
     rows = load_rows(args.csv)
-    passed, rejected = run_gigo_gate(rows)
-
-    scored = [score_company(r) for r in passed]
-    scored = [s for s in scored if s["n_decisions"] >= args.min_decisions]
-
+    passed_rows, rejected = run_gigo_gate(rows)
+    scored = aggregate_by_station_type(passed_rows)
+    scored = [s for s in scored if s["n_records"] >= args.min_records]
     allocation = reallocate_hours(scored, args.total_hours, args.top_n)
 
     out = {
         "status": ("HUMAN-APPROVED — reviewed and cleared for use" if args.human_approved
-                    else "DRAFT — NOT APPROVED. Do not act on this allocation (do not contact "
-                         "any company, submit any application, or spend any hours based on this "
-                         "output) until a human has reviewed it, including checking each "
-                         "company's actual open roles, and re-run with --human-approved."),
-        "objective_stated": ("Within a candidate's targeted-applying hours (per the book's 3-3-2 "
-                              "day, Ch.2), maximize expected interview-hours obtained per hour "
-                              "spent, using historical H-1B approval rate as a proxy for "
-                              "sponsorship likelihood."),
-        "objective_leaves_out": ("Competition per role, per-application time variance, whether "
-                                  "the company is currently hiring for this candidate's target "
-                                  "role, and whether past approval behavior predicts future "
-                                  "sponsorship policy."),
+                    else "DRAFT — NOT APPROVED. Do not act on this allocation until a human "
+                         "has reviewed it, including checking SLA-tier urgency for queued jobs, "
+                         "and re-run with --human-approved."),
+        "objective_stated": ("Maximize expected passing-unit throughput per test-station-hour "
+                              "spent, using historical pass rate as a proxy for station "
+                              "reliability."),
+        "objective_leaves_out": ("SLA-tier urgency, test-program-specific yield differences, "
+                                  "calibration schedules, and whether historical pass rate "
+                                  "reflects current hardware state."),
+        "data_note": "SYNTHETIC dataset — see tool docstring for what it does/doesn't capture.",
         "gate": {
             "rows_in": len(rows),
-            "rows_passed": len(passed),
+            "rows_passed": len(passed_rows),
             "rows_rejected": len(rejected),
             "rejection_reasons_sample": rejected[:10],
         },
-        "eligible_after_min_decisions_filter": len(scored),
+        "station_types_eligible": len(scored),
         "total_hours_reallocated": args.total_hours,
         "allocation": allocation,
     }
 
     Path(args.out).write_text(json.dumps(out, indent=2))
-    print(f"gate: {len(rows)} in -> {len(passed)} passed -> {len(scored)} eligible "
-          f"(min_decisions={args.min_decisions})")
-    print(f"reallocated {args.total_hours} hours across top {len(allocation)} companies -> {args.out}")
+    print(f"gate: {len(rows)} in -> {len(passed_rows)} passed -> {len(scored)} eligible station types")
+    print(f"reallocated {args.total_hours} hours across top {len(allocation)} station types -> {args.out}")
 
 
 if __name__ == "__main__":

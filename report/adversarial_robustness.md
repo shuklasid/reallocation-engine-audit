@@ -1,52 +1,51 @@
 # Adversarial Robustness & Fragility
 
-## The perturbation
-A small, entirely realistic change: **2 additional approved LCAs** for a
-company already near the top-15 cutoff — well within normal year-to-year
-filing noise, not an attack in any dramatic sense, just the kind of update
-that would show up in next year's data refresh.
+## Finding 1 — a small perturbation flips an internal ranking
+Comparing the two closest-ranked station types (both currently receiving
+hours, adjacent ranks 3 and 4):
 
-## Real case, exact numbers
-| Rank | Company | Approvals | n | Rate | Score |
-|---|---|---|---|---|---|
-| 15 (last included) | ICON TECHNOLOGY INC | 2,200 | 2,216 | 99.28% | 0.98918 |
-| 16 (just excluded) | TURO INC | 172 | 172 | 100% | 0.98908 |
+| Rank | Station | Passed/Total | Score |
+|---|---|---|---|
+| 3 | LegacyMixedSignalTester_GenA | 7,275 / 7,718 | 0.9374 |
+| 4 | PowerDeviceTester_GenA | 934 / 985 | 0.9350 |
 
-The score gap between rank 15 and rank 16 is **0.0001** — a rounding error's
-width. Adding 2 approvals to Turo's real record (172 → 174 approvals, same
-100% rate) is enough to push its score to 0.9892, **flipping the ranking**
-and bumping Icon Technology out of the top-15 entirely, with zero hours
-allocated instead of its current 2.66.
+Gap: **0.0024** — the tightest adjacent gap on the whole ranked list.
+**Adding just 20 additional failed units** (out of 7,718 — a defect-rate
+increase of about 0.26%, easily within one bad batch or a single
+calibration drift event) drops LegacyMixedSignalTester_GenA's score to
+0.9349, below PowerDeviceTester_GenA. A realistic, small, single-cycle
+quality blip reorders which station type gets more hours, even though
+neither station's *true* long-run reliability plausibly changed at all.
 
-## Condition under which the engine flips
-Any company sitting within roughly 0.0001–0.001 priority-score units of the
-cutoff boundary is one or two ordinary filings away from flipping in or out
-— and there's no way to tell from the tool's output which companies are in
-that fragile zone versus genuinely, robustly ranked. The engine gives no
-signal that rank 15 and rank 16 are, for practical purposes, tied.
+## Finding 2 — the actual inclusion/exclusion cutoff is comparatively more robust
+At the harder boundary — rank 10 (last included) vs. rank 11 (first
+excluded) — the gap is larger and the story is different:
 
-## Why this matters, not just as a math curiosity
-This isn't really "gaming" in the adversarial-attacker sense — a company
-doesn't need to try to manipulate this. **Ordinary data refresh noise**
-(this quarter's filings versus last quarter's) could flip which companies
-make a candidate's top-15 list, for reasons that have nothing to do with
-which company is actually a better use of the candidate's next 40 hours.
+| Rank | Station | Score |
+|---|---|---|
+| 10 (included) | MemoryTester_GenB | 0.8930 |
+| 11 (excluded) | SoCFinalTester_GenB | 0.8762 |
 
-## Honest limits of this test
-I did not test a genuine distribution-shift scenario (e.g., an
-across-the-board approval-rate drop from a policy change) — that would
-require simulating a shifted dataset rather than perturbing one real row,
-and I didn't have time to build that scenario for this submission. It's a
-known gap, not a hidden one: a policy shift that raises denial rates
-industry-wide would silently invalidate every score in this tool, since
-nothing here is time-weighted or aware of recency.
+Flipping this boundary requires **550 additional passed units** for
+SoCFinalTester_GenB (out of its current 3,302 total) — a ~17% volume
+increase, not a trivial data-entry blip. **This is a meaningfully more
+robust boundary than the earlier project's equivalent finding** (there,
+just 2 approvals out of 172 flipped a company in or out).
 
-## What the fix would actually be
-The deeper issue isn't the scoring formula — it's the **hard top-N cutoff
-itself**. Any hard cutoff creates a cliff at whatever score happens to sit
-at position N, regardless of how close position N+1 is. A more honest
-design would either (a) allocate hours continuously and proportionally
-across all eligible companies rather than a hard top-15, or (b) explicitly
-flag "near-boundary" companies (e.g., within some epsilon of the cutoff) as
-statistically tied, rather than presenting a clean ordinal ranking that
-implies more precision than the data supports.
+## Why both results matter together
+Reporting only Finding 1 would overstate fragility; reporting only
+Finding 2 would understate it. The honest picture is: **which** boundary
+you're near matters a lot. A station sitting near an internal-ranking
+boundary can flip on almost nothing. A station sitting near the hard
+inclusion cutoff needs a real, sustained volume change to flip — which is
+a meaningfully different risk profile than the first project's cutoff,
+and worth stating precisely rather than reusing the earlier "everything
+near a boundary is fragile" framing uncritically.
+
+## Honest limits
+I did not test a genuine process-shift scenario (e.g., an actual yield-ramp
+improvement sustained over many cycles, which per the causal reasoning
+section is the scenario this tool is least equipped to detect at all,
+since it only sees a static historical average). That's a bigger, more
+interesting robustness question than either finding above, and I didn't
+have time to simulate it properly for this submission.

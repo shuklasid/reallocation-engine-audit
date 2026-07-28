@@ -4,46 +4,34 @@
 
 | Stage | Tool decides | Human decides | Override / handoff point |
 |---|---|---|---|
-| Data ingestion | Load CSV rows | — | — |
-| GIGO gate | Reject rows failing checkable criteria (missing fields, no H-1B record, corrupt counts) | Review rejection rate if it looks abnormal | If >90% of rows are rejected (as happened here: 94.9%), a human must confirm this reflects real data sparsity, not a broken gate rule, before trusting the remaining sample |
-| Scoring (approval rate + uncertainty) | Compute exact statistics | Judge whether the scoring formula itself is trustworthy | Per the causal-reasoning finding, a human must know the uncertainty-discount coefficient (0.5) injects a size bias — this is a permanent human-judgment override on how much to trust the score, not a one-time check |
-| Ranking / cutoff | Sort and cut at top-N | Treat near-boundary companies as effectively tied | Per the adversarial-robustness finding, anything within ~0.001 score units of the cutoff (e.g., rank 15 vs 16 here) must be flagged and reviewed manually — the tool does not currently do this automatically, which is itself a named gap |
-| Role/fit relevance | Nothing — the tool has no visibility into this at all | Manually check each recommended company's actual open roles | Mandatory, per the explainability finding (Amgen scores 0.99 but sponsors almost no backend-engineering roles) — this is not optional due diligence, it's compensating for a real blind spot |
-| **Acting on the allocation** (contacting a company, submitting an application, spending real hours) | **Never** — the tool has no ability to contact anyone or submit anything | **Always** — 100% human action | **This is the hard-stop gate.** See below. |
+| Data ingestion | Load CSV | — | — |
+| GIGO gate | Reject rows failing checkable criteria | Confirm rejection rate looks sane | 25/3,823 rejected here — a human should sanity-check this stays low; a sudden spike would suggest a real upstream data problem, not just noise |
+| Scoring | Exact pass-rate + Wilson interval per station type | Judge whether the formula's assumptions hold | Per causal reasoning: a human must know this tool assumes a stable historical rate, which breaks for a station undergoing real yield ramp |
+| Ranking / cutoff | Sort, cut at top-N | Treat near-boundary rankings as provisional | Per adversarial finding 1, ranks 3-4 are separated by a gap a single bad batch could close — a human should not treat close rankings as decisively ordered |
+| SLA-tier urgency | Nothing — the tool has no visibility into this | Manually check whether an excluded station type is carrying disproportionate Critical-tier work | Mandatory, per the explainability finding: `NewPilotLine_ProtoStation` has the highest Critical-tier share of any station type and would be silently zeroed out without this check |
+| **Acting on the allocation** (actually reconfiguring a station, rerouting a real job) | **Never** | **Always** | Hard-stop gate below |
 
-## The hard-stop gate — implemented, not just specified
-This tool never touches a real-world resource on its own: it doesn't email
-companies, submit applications, or take any external action. But per the
-assignment's own framing — "if it spends, commits, or changes access, it
-stops and asks, every time" — the actual resource being reallocated here
-(the candidate's job-search hours) still needs an explicit human checkpoint
-before the recommendation is treated as a real plan, because acting on a
-bad recommendation costs real time the candidate can't get back.
-
-I implemented this as a code-level flag, not just a policy statement:
+## The hard-stop gate — implemented
+Same pattern as before, code-level not just documented:
 
 ```
 $ python3 tool/reallocate.py ... --out allocation_draft.json
-status: "DRAFT — NOT APPROVED. Do not act on this allocation ... until a
-         human has reviewed it, including checking each company's actual
-         open roles, and re-run with --human-approved."
+status: "DRAFT — NOT APPROVED. Do not act on this allocation until a
+         human has reviewed it, including checking SLA-tier urgency for
+         queued jobs, and re-run with --human-approved."
 
 $ python3 tool/reallocate.py ... --human-approved --out allocation_approved.json
 status: "HUMAN-APPROVED — reviewed and cleared for use"
 ```
 
-**Why this gate is non-negotiable here:** this tool's outputs directly
-shape where a real person spends scarce, non-refundable time during a
-visa-constrained job search. A bad recommendation acted on blindly — e.g.
-spending hours on Amgen expecting backend-engineering openings that don't
-really exist there — is a real cost to the candidate, not an abstract risk.
-The gate doesn't prevent the tool from being wrong; it prevents a wrong
-recommendation from being acted on without a human actually looking at it
-first.
+**Why this gate is non-negotiable here:** this tool's recommendation
+directly shapes which physical test stations get real work routed to
+them. A wrong recommendation acted on blindly — for instance, starving the
+one station type carrying the most Critical-tier jobs — has a real
+operational cost (delayed shipment of urgent units), not an abstract one.
 
-**Honest limit:** the flag is trivially bypassable — nothing stops someone
-from just adding `--human-approved` without actually reviewing anything.
-A real deployment would need this enforced by a workflow (e.g., a second
-person or a checklist UI) rather than a boolean CLI flag a single user
-controls. Naming that gap is more honest than pretending the flag alone
-solves the problem.
+**Honest limit:** identical to the earlier project — the flag is a
+boolean a single person controls, trivially bypassable by someone who
+doesn't actually review anything before setting it. A real deployment
+needs this enforced by a second reviewer or a workflow gate, not a CLI
+flag alone.

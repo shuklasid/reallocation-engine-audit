@@ -1,83 +1,79 @@
 # Causal & Counterfactual Reasoning (Pearl's Three Rungs)
 
 ## Rung 1 — Observation
-What correlates with a "good outcome" (a company scored as high-priority)?
-
-In the raw data, **approval rate does not correlate with company size/filing
-volume at all**: Pearson r(n_decisions, approval_rate) = **0.0033**. Small
-filers (n = 2-4 decisions) average a 98.09% approval rate; large filers
-(n = 50+) average 98.37% — essentially the same. This is consistent with
-the well-known fact that H-1B approval rates are high industry-wide, so
-there wasn't much room for company size to move the needle here.
-
-This *contradicts* my pre-registered prediction that the raw approval-rate
-signal itself would be confounded by company size. It wasn't.
+Unlike the earlier version of this project (job-search hour allocation by
+H-1B approval rate, since abandoned for this domain), **raw pass rate here
+DOES correlate with record volume**: Pearson r(n_records, pass_rate) =
+**0.306** — moderate, not zero. Mature, high-volume station types
+(BurnInSystem_GenA, the Legacy testers) cluster at 92-98% pass rates;
+low-volume, newer categories (RF testers, the pilot line) cluster at
+83-87%.
 
 ## Rung 2 — Intervention
-Here's where the tool's own math introduces a confound the data doesn't have.
-The tool doesn't score on raw approval rate — it scores on
-`priority_score = rate * (1 - 0.5 * uncertainty_width)`, where
-`uncertainty_width` is a Wilson-interval width that shrinks mechanically as
-`n_decisions` grows, independent of the true underlying rate.
+Is this a real causal relationship or an artifact worth distrusting? In
+semiconductor manufacturing, a genuine phenomenon called **yield ramp**
+means new production lines really do start with lower yield and improve as
+process kinks get worked out — so *some* of this correlation may reflect
+real physics/process reality, not just an artifact of how much data exists.
+That's different from the H-1B case, where there was no equivalent
+real-world mechanism connecting company size to true approval rate.
 
-Measured directly:
-- Pearson r(n_decisions, uncertainty_width) = **-0.185**
-- Pearson r(n_decisions, priority_score) = **+0.154**
+But the scoring formula still adds its own confound on top: the
+uncertainty-discount term shrinks with volume regardless of whether a
+station's true rate is stable or improving. Measured directly by
+comparing the lowest-scoring station (`NewPilotLine_ProtoStation`, n=346,
+observed rate 83.24%) against a counterfactual with the same rate but
+progressively more accumulated volume:
 
-So: **if you intervened on a company's `n_decisions`** — say, it simply had
-50 more H-1B filings show up in next year's data, at the *same* true
-approval rate — its `priority_score` would rise, and it would receive more
-of the candidate's scarce hours, **with no change in its actual
-sponsorship-friendliness**. The confounder here isn't a hidden third
-variable in the usual sense; it's the tool's own uncertainty-discount
-formula, which conflates "how much paperwork exists" with "how attractive
-this company is as a sponsor."
+| Hypothetical n | Uncertainty width | Score |
+|---|---|---|
+| 346 (actual) | 0.0786 | 0.7997 |
+| 1,000 | 0.0463 | 0.8131 |
+| 3,000 | 0.0267 | 0.8213 |
+| 7,718 (matches the most mature station's volume) | 0.0167 | **0.8255** |
 
-## Rung 3 — Counterfactual
-A real, exact case from the data: at **100% observed approval rate**,
-compare:
+## Rung 3 — Counterfactual, and where my prediction was wrong
+**Counterfactual claim:** even if `NewPilotLine_ProtoStation` had
+accumulated as much test volume as the most mature station on the floor,
+with its *same* observed 83.24% rate, its score would only rise to
+**0.8255** — which is still below `RFTester_GenA`'s current score of
+**0.8457**. **No realistic amount of additional volume would move it out
+of last place**, given its current observed rate.
 
-| Company | n_decisions | Approval rate | Uncertainty width | Effect on score |
-|---|---|---|---|---|
-| 1LIFE HEALTHCARE INC | 2 | 100% | 0.658 (wide) | heavily discounted |
-| 317 LABS INC | 2 | 100% | 0.658 (wide) | heavily discounted |
-| CONFLUENT INC | 610 | 100% | 0.006 (narrow) | almost no discount |
+**This means my pre-registered prediction was mostly wrong.** I predicted
+the pilot station would be "unfairly buried" by low sample size, expecting
+a story similar to the earlier project's Turo/Icon finding, where sample
+size alone flipped a ranking. Here, sample size only accounts for a small
+slice of the gap (0.7997 → ~0.83 ceiling) — most of the low ranking is a
+genuine, real difference in observed pass rate, not a scoring artifact.
 
-**Counterfactual claim:** had 1LIFE HEALTHCARE's true sponsorship behavior
-been identical to Confluent's (both 100% approval), but its *filing volume*
-had also happened to be 610 instead of 2, it would have received nearly the
-full, undiscounted priority score instead of being penalized to roughly a
-third of it — a purely mechanical consequence of sample size, not of any
-real difference in how likely either company is to sponsor a candidate.
-
-**Assumption this rests on:** that a company's true approval rate is stable
-regardless of how many decisions have been logged — i.e., that 1LIFE
-HEALTHCARE isn't actually different from Confluent in some real way that
-also happens to correlate with filing volume (e.g., maturity, HR
-sophistication). I can't rule that out with this data; I can only show the
-tool's formula would treat them identically-scored if that assumption
-holds.
+**Assumption this rests on:** that the pilot station's currently observed
+83.24% rate is a stable estimate of its true rate going forward. If yield
+ramp is real and ongoing, its *true* rate may currently be increasing even
+as the historical average sits at 83.24% — and this tool has no mechanism
+to detect a trend, only a static historical average. That's a real,
+separate causal problem this tool doesn't address at all: it cannot tell
+the difference between "a station that's reliably mediocre" and "a station
+that's improving but hasn't accumulated enough recent-only data to show it."
 
 ## Honest verdict
-**Yes — this engine reallocates on correlation dressed as causation, and it
-does so in two separate ways, not one:**
+**Yes, this still reallocates on correlation dressed as causation — but
+via a different mechanism than the earlier version of this project.** The
+raw pass-rate signal here is a superficially more defensible proxy (yield
+ramp is a real phenomenon, unlike company-size confounding in the H-1B
+case), but the tool still can't distinguish a station that's *stably*
+mediocre from one that's *improving*, and averaging all historical data
+into one static rate silently assumes the underlying process hasn't
+changed — the same static-history assumption that broke the H-1B version,
+just manifesting differently here.
 
-1. Even the "clean" raw signal (approval rate) is a proxy: it measures
-   whether a company **has** sponsored someone before, not whether spending
-   *this candidate's* additional hours applying there **causes** a higher
-   probability of a sponsored offer. The causal quantity the tool actually
-   needs — "does an extra hour of my effort at company X increase my odds
-   of an offer there" — is never measured by this dataset at all. Historical
-   institutional approval behavior and one candidate's marginal-hour payoff
-   are different causal objects entirely.
-2. On top of that unavoidable proxy problem, the tool's own scoring formula
-   introduces a second, avoidable one: it lets statistical sample size
-   masquerade as a signal about company quality, systematically favoring
-   large, well-documented companies over small ones with identical true
-   behavior.
-
-My pre-registered prediction was **directionally right but located in the
-wrong place** — I expected the confound in the data; it actually turned out
-to live in the tool's own uncertainty-weighting design. That's a more
-useful finding than if I'd been right in the way I expected, and it's the
-kind of thing the reflection should say plainly rather than paper over.
+**On the prediction itself:** being wrong here was more informative than
+being right would have been. I expected to find the same "the tool invents
+a bias" story a second time, and reflexively assumed the *shape* of the
+first project's finding would transfer to a new domain. It didn't — the
+volume/quality relationship in this domain is at least partially grounded
+in real physical behavior (yield ramp), which the H-1B data had no
+equivalent of. That's a useful lesson about not assuming a validated
+finding in one domain automatically generalizes to a structurally
+different one, even when the tool's mathematical architecture is
+identical.

@@ -1,71 +1,74 @@
 # Bias Audit (Data → Output)
 
 ## Where bias enters
-Not in the labels (approval/denial outcomes are objective DOL records) and
-not obviously in sampling (the CSV covers a broad cross-section of Form D
-filers). It enters at the **objective/scoring stage**: the tool's uncertainty
-discount (`priority_score = rate * (1 - 0.5*uncertainty_width)`) treats
-"few recorded decisions" as a penalty, which mechanically disadvantages
-newer, smaller companies regardless of their true sponsorship rate — this
-is the same mechanism identified in the causal reasoning section, now
-showing up as a fairness harm rather than a purely statistical one.
+Not primarily in sampling or labels (units passed/failed are objective
+counts) — it enters at the **feedback loop**. This tool's own output
+determines which station types get more test-station-hours *next cycle*,
+which determines how much new data those stations accumulate, which
+determines how much their uncertainty shrinks, which determines their
+priority score next time. A station excluded this cycle is disadvantaged
+in exactly the input the tool uses to decide next cycle's allocation.
 
-## Who is systematically advantaged / starved
-**Group A — early-stage** (funding stage: Pre-Seed, Seed, Series A), n=659 eligible
-**Group B — late-stage** (funding stage: Series C, Series D+), n=514 eligible
+## Who is systematically starved
+Under the current run (200 hours, top-10 of 15 station types): **5 of 15
+station types receive zero hours** — `SoCFinalTester_GenA/GenB`,
+`RFTester_GenA/GenB`, and `NewPilotLine_ProtoStation`. Per the causal
+reasoning section, the pilot line's exclusion is *mostly* explained by a
+genuinely lower observed rate — but the mechanism that keeps it excluded
+going forward is purely the feedback loop: zero hours this cycle means
+zero new test volume, means its uncertainty stays wide, means it keeps
+scoring low next cycle too, regardless of whether its true yield is
+actually improving (yield ramp).
 
-| Metric | Early-stage | Late-stage |
-|---|---|---|
-| Mean approval rate (true quality) | 97.50% | 97.98% |
-| Mean n_decisions (filing volume) | 23.93 | 151.81 |
-| Mean priority_score (what the tool actually ranks on) | 0.7812 | 0.8653 |
-| Selected into top-15 hour allocation | 1 / 659 | 11 / 514 |
-| **Selection rate** | **0.15%** | **2.14%** |
+## Quantitative fairness framing
+Group station types by maturity (mean station age, already computed):
+- **Established** (mean age ≥ 6 years): BurnInSystem_GenA (6.5),
+  LegacyMixedSignalTester_GenA/B (6.5, 6.3) — all three **selected**,
+  receiving hours every cycle.
+- **Emerging/new** (mean age < 6 years, includes the youngest categories):
+  RFTester_GenA/B, SoCFinalTester_GenA/B, NewPilotLine — **0 of 5
+  selected** in this run.
 
-**Quantitative fairness metric applied — four-fifths (disparate impact) rule:**
-selection-rate ratio = 0.15% / 2.14% = **0.070** (7%). The four-fifths rule
-(a common employment-law adverse-impact threshold) considers a selection
-ratio below 80% evidence of disparate impact. This tool's ratio is **more
-than 11x below that threshold**, despite the two groups having almost
-identical true approval rates (97.5% vs 98.0% — a 0.48-point gap that in no
-way justifies a 14x selection-rate gap).
+**Selection rate: established = 3/3 (100%); emerging = 0/5 (0%).** This is
+a complete exclusion, not a disparity in degree — the four-fifths rule
+doesn't even apply meaningfully here because the emerging group's
+selection rate is zero, the most extreme possible violation.
 
 ## Two competing fairness definitions, in tension
-**Definition 1 — Demographic parity / four-fifths rule:** early-stage and
-late-stage companies should be selected at comparable rates. **Violated**
-(ratio = 0.07, far below 0.80).
+**Definition 1 — Demographic parity:** emerging station types should
+receive some non-zero share of hours proportional to their number, so the
+floor doesn't structurally freeze out newer categories. **Violated
+completely** (0% selection rate for the emerging group).
 
-**Definition 2 — Calibration (sufficiency):** companies with equal true
-approval rate should receive statistically equal treatment. Since the two
-groups' true rates are nearly identical (97.5% vs 98.0%), calibration
-implies they should score similarly. **Also violated** — but fixing it
-isn't free.
+**Definition 2 — Calibration/merit:** hours should go to stations that
+will produce the most passing units per hour, and if emerging stations
+genuinely have lower yield right now, sending them hours is a real
+efficiency cost, not a bias correction. **Also has a real claim here** —
+unlike the H-1B case, some of this domain's disparity may reflect true
+underlying differences (yield ramp), not just measurement noise.
 
-**The actual tradeoff:** the reason small-n companies score lower isn't
-arbitrary — it's the Wilson interval correctly expressing that a 100%
-approval rate on 2 decisions is genuinely less certain than 100% on 610
-decisions. **Removing the uncertainty discount to satisfy calibration/parity
-would mean treating a company we've seen twice as equally trustworthy as
-one we've seen 610 times** — which is statistically dishonest in the
-opposite direction: it would overstate confidence in small, thin-history
-companies, not just correct an unfair penalty.
+**The actual tradeoff:** unlike the earlier project, where calibration and
+parity pointed toward the same conclusion (the disparity there was
+entirely artifact, so fixing it cost little), here they may genuinely
+conflict. Guaranteeing emerging stations some minimum hours could mean
+routing test capacity toward stations that currently produce more scrap —
+a real throughput cost, not just an accounting correction. But refusing to
+ever allocate them anything guarantees they can never generate the data
+needed to prove a real yield improvement, which is arguably a worse
+long-run cost: a genuinely improving pilot line could stay locked out
+indefinitely by a scoring formula that only looks backward.
 
-**What I chose, and what it costs:** I'd keep some uncertainty discount
-(statistical honesty matters — a truly unproven company shouldn't be
-scored as confidently as a proven one) but shrink its weight sharply (e.g.
-from a 0.5 coefficient to something like 0.15), and add a **guaranteed
-minimum-exploration-hours floor** — every company clearing the GIGO gate
-gets at least some nonzero allocation regardless of score, so early-stage
-companies are never fully zeroed out by a mechanical sample-size penalty
-alone. **Cost:** this deliberately sacrifices some of the score's raw
-statistical rigor (a low-n company that's a genuine fluke will still get
-some hours) to buy back real access for otherwise-qualified small
-companies — a considered choice, not a free win.
+**What I'd choose, and what it costs:** a small guaranteed exploration
+floor — e.g., 5% of total hours reserved and split evenly across
+zero-allocation station types regardless of score — costing a modest,
+bounded amount of throughput now, in exchange for the emerging categories
+having *any* chance to demonstrate real improvement over time. This is a
+deliberate, named cost, not a free fix.
 
 ## Highest-leverage intervention point
-The `0.5` coefficient in `priority_score = rate * (1 - 0.5*uncertainty_width)`
-is the single mechanical lever responsible for **both** the causal confound
-(Rung 2) and this fairness violation. It's the cheapest, most targeted fix
-available — changing it doesn't touch the GIGO gate, the data ingestion, or
-the underlying approval-rate estimates, all of which are working as
-intended.
+The feedback loop itself: allocation determines future data, which
+determines future allocation. The cheapest fix isn't changing the scoring
+formula — it's decoupling "gets hours this cycle" from "definitely locked
+out of ever accumulating more data," via the exploration floor above. That
+breaks the loop without requiring the formula to somehow already know
+which stations are truly improving.
